@@ -1,6 +1,6 @@
 # Secrets
 .env
-bot.py
+
 # Python
 __pycache__/
 *.pyc
