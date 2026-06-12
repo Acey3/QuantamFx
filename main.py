@@ -9,7 +9,16 @@ import pandas as pd
 
 from config import STATE_FILE, SYMBOLS
 from data import get_data
-from indicators import apply_indicators, get_signal
+from indicators import (
+    apply_indicators,
+    get_candlestick_pattern_alerts,
+    get_macd_crossover_alert,
+    get_signal,
+    get_support_resistance_alert,
+    get_trend_filter,
+    _compute_recent_levels,
+)
+
 from logging_utils import setup_logging
 from state import BotState, load_state, save_state
 from telegram_bot import send_telegram
@@ -27,9 +36,11 @@ def run_bot() -> None:
     setup_logging()
 
     now = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-    prev: BotState = load_state(STATE_FILE)
+    state: BotState = load_state(STATE_FILE)
 
-    alerts: list[tuple[str, str, float, float, float, float]] = []
+    # (symbol, message_line)
+    alerts: list[tuple[str, str]] = []
+
 
     # Loop through pairs and compute indicators for each.
     for symbol in SYMBOLS:
@@ -39,14 +50,44 @@ def run_bot() -> None:
             df = apply_indicators(df)
 
             latest = df.iloc[-1]
+            prev_row = df.iloc[-2] if len(df) >= 2 else latest
+            # Keep existing RSI/EMA BUY/SELL signal logic
             signal = get_signal(latest)
-
             price = _to_float(latest["Close"])  # current market price
             rsi = _to_float(latest["rsi"])
             ema50 = _to_float(latest["ema50"])
             ema200 = _to_float(latest["ema200"])
 
-            alerts.append((symbol, signal, price, rsi, ema50, ema200))
+            if signal in ("BUY 📈", "SELL 📉"):
+             alerts.append(
+        (
+            symbol,
+            signal,
+            price,
+            rsi,
+            ema50,
+            ema200,
+        )
+    )
+            # MACD crossover alerts
+            macd_alert = get_macd_crossover_alert(prev_row, latest)
+            if macd_alert:
+                alerts.append((symbol, macd_alert))
+
+            # Trend filter (EMA50 vs EMA200)
+            trend_alert = get_trend_filter(latest)
+            if trend_alert:
+                alerts.append((symbol, trend_alert))
+
+            # Support & Resistance
+            df_levels = _compute_recent_levels(df, lookback=20)
+            sr_alerts = get_support_resistance_alert(df_levels, latest, lookback=20, near_threshold_pct=0.25)
+            alerts.extend([(symbol, a) for a in sr_alerts])
+
+            # Candlestick patterns
+            candle_alerts = get_candlestick_pattern_alerts(prev_row, latest)
+            alerts.extend([(symbol, a) for a in candle_alerts])
+
         except Exception:
             logger.exception("Failed computing indicators for %s", symbol)
 
@@ -55,9 +96,13 @@ def run_bot() -> None:
         return
 
     # Send signal only when conditions are met (BUY/SELL).
-    actionable = [a for a in alerts if a[1] in ("BUY 📈", "SELL 📉")]
+    logger.info("Total alerts collected: %s", len(alerts))
+
+    for item in alerts:
+     logger.info("Alert item: %s", item)
+    actionable = [a for a in alerts if len(a) == 6 and a[1] in ("BUY 📈", "SELL 📉")]
     if not actionable:
-        logger.info("No actionable signals (BUY/SELL); nothing to send")
+        send_telegram("📊 Scan completed.\n\nNo BUY/SELL signals found.")
         return
 
     # Include pair name in alert.
@@ -73,9 +118,10 @@ def run_bot() -> None:
 
     message = "\n".join(lines).rstrip() + "\n"
 
-    # Prevent duplicate alerts: de-dup on actionable set.
-    dedup_key = "|".join([f"{sym}:{sig}" for sym, sig, *_ in actionable])
-    if prev.last_signal == dedup_key:
+    # Prevent duplicate alerts: de-dup on full actionable message set.
+    dedup_key = "|".join([str(alert) for alert in actionable])
+
+    if state.last_signal == dedup_key:
         logger.info("Skipping duplicate alerts. last_signal=%s", dedup_key)
         return
 
@@ -86,8 +132,8 @@ def run_bot() -> None:
     except Exception:
         logger.exception("Telegram send failed; not updating state")
         raise
-
-    save_state(STATE_FILE, BotState(last_signal=dedup_key))
+    new_state = BotState(last_signal=dedup_key)
+    save_state(STATE_FILE, new_state)
 
 
 if __name__ == "__main__":

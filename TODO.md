@@ -1,15 +1,14 @@
-- [x] Inspect forex_test.py for the error source
-- [x] Split forex_test.py into modules: config.py, data.py, indicators.py, telegram_bot.py, main.py
-- [x] Make forex_test.py a backward-compatible runner that calls main.run_bot()
-- [x] Run a quick compile check + execute forex_test.py to confirm Telegram message works
-
-- [x] Add logging
-- [x] Add exception handling around Telegram send
-- [x] Add current market price (Close)
-- [x] Add timestamp (UTC)
-- [x] Prevent duplicate alerts (stores last signal in bot_state.json)
-- [x] Save last signal to file
-
-- [x] Add additional symbols (multi-symbol alerts)
-- [x] Replace unsupported XAUUSD=X with GC=F (Yahoo gold futures)
+- [ ] Extend indicators.py:
+  - [ ] Compute MACD line + signal line + histogram/crossover detection (bullish/bearish)
+  - [ ] Compute trend filter: EMA50 vs EMA200 (bullish/bearish)
+  - [ ] Detect recent highs/lows via rolling window (support/resistance levels)
+  - [ ] Detect candle patterns: bullish engulfing, bearish engulfing, pin bars, doji
+  - [ ] Provide structured helpers to produce alert strings for each symbol/event
+- [ ] Update main.py:
+  - [ ] For each symbol, generate MACD crossover alerts, trend filter status, S/R near-level alerts, and candlestick pattern alerts
+  - [ ] Keep existing RSI/EMA BUY/SELL logic unchanged
+  - [ ] Improve de-duplication key to include event type + direction
+- [ ] Quick sanity checks:
+  - [ ] Run a local import/compile check (python -m py_compile)
+  - [ ] Run forex_test.py (if credentials/tokens set) to validate Telegram payload formatting
 
