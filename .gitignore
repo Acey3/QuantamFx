@@ -1,0 +1,12 @@
+# Secrets
+.env
+bot.py
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local state
+bot_state.json
+
